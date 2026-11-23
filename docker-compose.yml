@@ -1,0 +1,44 @@
+name: temuin
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: temuin-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: temuin
+      POSTGRES_PASSWORD: temuin
+      POSTGRES_DB: temuin
+      TZ: Asia/Jakarta
+    ports:
+      - "5433:5432" # akses dari host (DBeaver / go run). Hapus saat deploy ke server.
+    volumes:
+      - temuin_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temuin -d temuin"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    image: temuin-api
+    container_name: temuin-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # di dalam network compose, DB diakses lewat nama service
+      DB_HOST: postgres
+      DB_PORT: 5432
+      UPLOAD_DIR: /app/uploads
+    ports:
+      - "8080:8080"
+    volumes:
+      - temuin_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  temuin_pgdata:
+  temuin_uploads:

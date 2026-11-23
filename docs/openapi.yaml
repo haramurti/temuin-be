@@ -1,0 +1,1201 @@
+openapi: 3.0.3
+info:
+  title: Temuin API
+  version: 1.0.0
+  description: |
+    Backend API **Temuin – Smart Geo-Tagged Lost & Found System** (Universitas Brawijaya).
+
+    Fungsi utama:
+    1. Verifikasi Klaim & Serah Terima (claims)
+    2. Peta Ketersediaan Pick-up Point (map / pickup-points)
+    3. Inbox & Notifikasi Berbasis Status (notifications, claims/incoming, claims/mine)
+    4. Rekomendasi Kecocokan Laporan (reports/{id}/matches)
+
+    **Envelope**: semua response memakai `{ success, message, data, meta }` atau `{ error: { code, message, details } }`.
+    **Auth**: semua endpoint kecuali `/auth/*`, `/faculties` dan `/health` butuh header `Authorization: Bearer <token>`.
+    **Waktu**: ISO-8601 / RFC3339 UTC, contoh `2026-11-16T07:30:00Z`.
+servers:
+  - url: https://remissly-crumbier-michelle.ngrok-free.dev/api/v1
+    description: Ngrok (publik, laptop host harus nyala; kirim header ngrok-skip-browser-warning=1)
+  - url: http://localhost:8080/api/v1
+    description: Local
+  - url: http://10.0.2.2:8080/api/v1
+    description: Android emulator → host
+tags:
+  - name: Auth
+  - name: Users
+  - name: Uploads
+  - name: Reports
+  - name: Custody
+    description: Status penitipan barang temuan (Fungsi 2)
+  - name: Matching
+    description: Rekomendasi kecocokan (Fungsi 4)
+  - name: Claims
+    description: Verifikasi klaim & serah terima (Fungsi 1)
+  - name: Inbox
+    description: Notifikasi & badge (Fungsi 3)
+  - name: Map
+    description: Pick-up point & ketersediaan (Fungsi 2)
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Sign Up
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Registrasi berhasil, langsung login
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/AuthResult' } }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Sign In
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Login berhasil
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/AuthResult' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /faculties:
+    get:
+      tags: [Auth]
+      summary: Daftar fakultas UB (dropdown Sign Up)
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Faculty' }
+
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Profil saya (data privat)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/UserPrivate' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [Users]
+      summary: Edit profil
+      description: Partial update. Kirim string kosong `""` untuk mengosongkan field opsional.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProfileRequest' }
+      responses:
+        '200':
+          description: Profil diperbarui
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/UserPrivate' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /users/me/password:
+    put:
+      tags: [Users]
+      summary: Ganti password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OKEmpty' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /users/me/reports:
+    get:
+      tags: [Users]
+      summary: Laporan Saya
+      description: Default menampilkan semua status milik user (ACTIVE, COMPLETED, CLOSED).
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/ReportType'
+        - $ref: '#/components/parameters/Category'
+        - $ref: '#/components/parameters/ReportStatus'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/ReportList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /users/{id}:
+    get:
+      tags: [Users]
+      summary: Profil publik user lain
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/UserPublic' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /uploads:
+    post:
+      tags: [Uploads]
+      summary: Upload gambar
+      description: |
+        Upload foto laporan / bukti klaim / avatar. Hanya JPEG, PNG, WEBP; maks `MAX_UPLOAD_MB` (default 5MB).
+        Gunakan `data.url` sebagai `photo_url`, `proof_photo_url`, atau `avatar_url`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                purpose: { type: string, enum: [reports, claims, avatars], default: reports }
+      responses:
+        '201':
+          description: Berkas diunggah
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/UploadResult' } }
+        '413': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /categories:
+    get:
+      tags: [Reports]
+      summary: Daftar kategori barang
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            code: { $ref: '#/components/schemas/Category' }
+                            label: { type: string, example: Dompet }
+
+  /reports:
+    get:
+      tags: [Reports]
+      summary: Feed / pencarian laporan
+      description: Feed terpusat barang hilang & ditemukan. Default `status=ACTIVE`. Urut terbaru.
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/ReportType'
+        - $ref: '#/components/parameters/Category'
+        - $ref: '#/components/parameters/ReportStatus'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/ReportList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [Reports]
+      summary: Buat laporan (Lapor)
+      description: |
+        - `LOST`: `custody` & `pickup_point_id` harus kosong.
+        - `FOUND`: `custody` = `HELD_BY_FINDER` (default) atau `AWAITING_DROPOFF` (+ `pickup_point_id` wajib).
+          Barang **belum** dihitung di peta sampai `confirm-deposit`.
+        - `occurred_at` tidak boleh di masa depan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateReportRequest' }
+            examples:
+              lost:
+                summary: Barang hilang
+                value:
+                  type: LOST
+                  title: Dompet kulit hitam
+                  category: WALLET
+                  color: Hitam
+                  description: Dompet kulit hitam merk X, ada gantungan kunci
+                  occurred_at: '2026-11-16T03:00:00Z'
+                  location_point_id: bb995ad6-ce30-4f2f-8365-b050d5df0880
+                  location_name: Kantin, Meja 12
+                  photo_url: http://localhost:8080/uploads/reports/abc.jpg
+              found_deposit:
+                summary: Barang temuan, akan dititipkan
+                value:
+                  type: FOUND
+                  title: Dompet hitam
+                  category: WALLET
+                  color: Hitam
+                  description: Ditemukan di meja kantin
+                  occurred_at: '2026-11-16T05:00:00Z'
+                  location_point_id: bb995ad6-ce30-4f2f-8365-b050d5df0880
+                  location_name: Kantin, Meja 12
+                  custody: AWAITING_DROPOFF
+                  pickup_point_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+      responses:
+        '201':
+          description: Laporan dipublikasikan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/Report' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /reports/{id}:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    get:
+      tags: [Reports]
+      summary: Detail laporan
+      description: |
+        Status dibaca ulang setiap request. Objek `viewer` menentukan tombol di UI:
+        `can_claim` (Ajukan Klaim), `can_contact` (Hubungi Pelapor / kontak penemu), `my_claim_status`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/Report' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Reports]
+      summary: Edit laporan (pemilik, status ACTIVE)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateReportRequest' }
+      responses:
+        '200':
+          description: Laporan diperbarui
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/Report' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      tags: [Reports]
+      summary: Hapus laporan
+      description: Hanya pemilik & hanya jika belum pernah ada klaim (`409 REPORT_HAS_CLAIMS`). Selain itu gunakan `/close`.
+      responses:
+        '200': { $ref: '#/components/responses/OKEmpty' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /reports/{id}/close:
+    post:
+      tags: [Reports]
+      summary: Tutup laporan tanpa serah terima
+      description: Misal barang hilang sudah ketemu sendiri. Klaim terbuka → `ITEM_UNAVAILABLE`. Ditolak jika ada klaim APPROVED.
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses:
+        '200':
+          description: Laporan ditutup
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/Report' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /reports/{id}/contact:
+    get:
+      tags: [Reports]
+      summary: Kontak pelapor / penemu
+      description: |
+        - Laporan `LOST` aktif: kontak pelapor (tombol **Hubungi Pelapor**).
+        - Laporan `FOUND`: kontak penemu **hanya** untuk pengaju yang klaimnya APPROVED/COMPLETED, selain itu `403 CONTACT_RESTRICTED`.
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/Contact' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /reports/{id}/custody:
+    patch:
+      tags: [Custody]
+      summary: Ubah status penitipan (laporan FOUND)
+      description: |
+        - `HELD_BY_FINDER`: masih dipegang penemu (keluar dari stok pos).
+        - `AWAITING_DROPOFF` + `pickup_point_id`: pilih/ganti pos, menunggu konfirmasi (belum masuk peta).
+        - `UNAVAILABLE`: barang tidak lagi tersedia → klaim PENDING/APPROVED menjadi `ITEM_UNAVAILABLE`.
+        Klaim APPROVED otomatis mengikuti lokasi baru & pengaju mendapat notifikasi `PICKUP_CHANGED`.
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustodyRequest' }
+      responses:
+        '200':
+          description: Status penitipan diperbarui
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/Report' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /reports/{id}/custody/confirm-deposit:
+    post:
+      tags: [Custody]
+      summary: Konfirmasi barang sudah dititipkan di pos
+      description: Hanya dari `AWAITING_DROPOFF` → `DEPOSITED`. Setelah ini barang dihitung sebagai stok pos di peta.
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses:
+        '200':
+          description: Penitipan dikonfirmasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/Report' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /reports/{id}/matches:
+    post:
+      tags: [Matching]
+      summary: Cari Kecocokan (rekomendasi AI)
+      description: |
+        Tiga tahap: (1) filter wajib — laporan lawan jenis, aktif, bukan milik sendiri, kategori sama,
+        waktu temuan ≥ waktu hilang dan selisih ≤ 30 hari; (2) pra-penilaian berbasis aturan (warna, lokasi,
+        waktu, kata kunci), ambil 10 teratas; (3) Gemini memberi label HIGH/MEDIUM/LOW.
+        Jika Gemini tidak dikonfigurasi/gagal → `source=RULE_BASED` + `notices`.
+        Data < 3 atribut inti yang bisa dibandingkan → level maksimal MEDIUM.
+        **Hasil hanya rekomendasi**, tidak mengubah status laporan/klaim. Rate limit 10 req/menit/user.
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses:
+        '200':
+          description: Rekomendasi, perlu diverifikasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/MatchResult' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /reports/{id}/claims:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    post:
+      tags: [Claims]
+      summary: Ajukan klaim (calon pemilik)
+      description: |
+        Validasi: laporan FOUND & ACTIVE & barang tersedia; bukan laporan sendiri (`403 SELF_CLAIM`);
+        belum ada klaim aktif dari user ini (`409 DUPLICATE_CLAIM`); belum ada klaim disetujui (`409 ALREADY_APPROVED`).
+        `secret_description` bersifat rahasia — hanya pengaju & penemu yang bisa membaca.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitClaimRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/ClaimOne' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    get:
+      tags: [Claims]
+      summary: Semua klaim pada laporan saya (penemu)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { type: array, items: { $ref: '#/components/schemas/Claim' } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /claims/incoming:
+    get:
+      tags: [Claims, Inbox]
+      summary: Inbox — Klaim Masuk (sebagai penemu)
+      description: Urutan PENDING dulu, lalu terbaru.
+      parameters:
+        - $ref: '#/components/parameters/ClaimStatus'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/ClaimList' }
+  /claims/mine:
+    get:
+      tags: [Claims, Inbox]
+      summary: Inbox — Status Klaim Saya (sebagai calon pemilik)
+      parameters:
+        - $ref: '#/components/parameters/ClaimStatus'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/ClaimList' }
+  /claims/{id}:
+    get:
+      tags: [Claims]
+      summary: Detail klaim
+      description: Hanya pengaju & penemu; pihak lain mendapat 404. Membuka detail menandai notifikasi klaim ini sebagai dibaca.
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses:
+        '200': { $ref: '#/components/responses/ClaimOne' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /claims/{id}/approve:
+    post:
+      tags: [Claims]
+      summary: Setujui klaim (penemu)
+      description: |
+        Transaksional + row lock: hanya **satu** klaim disetujui per barang.
+        Metode pengambilan otomatis: `AT_PICKUP_POINT` bila barang DEPOSITED, selain itu `MEET_FINDER`.
+        Jika barang sudah tidak tersedia, klaim menjadi `ITEM_UNAVAILABLE` dan response `422 ITEM_UNAVAILABLE`.
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses:
+        '200': { $ref: '#/components/responses/ClaimOne' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /claims/{id}/reject:
+    post:
+      tags: [Claims]
+      summary: Tolak klaim (penemu)
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectClaimRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/ClaimOne' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /claims/{id}/cancel:
+    post:
+      tags: [Claims]
+      summary: Batalkan klaim (pengaju, saat PENDING)
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses:
+        '200': { $ref: '#/components/responses/ClaimOne' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /claims/{id}/resubmit:
+    post:
+      tags: [Claims]
+      summary: Ajukan ulang klaim yang ditolak
+      description: Membuat klaim baru (`previous_claim_id` = klaim lama). Wajib bukti/ciri baru.
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitClaimRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/ClaimOne' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /claims/{id}/complete:
+    post:
+      tags: [Claims]
+      summary: Konfirmasi serah terima selesai (penemu)
+      description: APPROVED → COMPLETED. Laporan menjadi COMPLETED, keluar dari peta; klaim lain yang terbuka → ITEM_UNAVAILABLE.
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses:
+        '200': { $ref: '#/components/responses/ClaimOne' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /claims/{id}/proof:
+    get:
+      tags: [Claims]
+      summary: Bukti persetujuan klaim
+      description: Hanya pihak terkait & hanya status APPROVED/COMPLETED. Bukan pengesahan universitas.
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/ClaimProof' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /notifications:
+    get:
+      tags: [Inbox]
+      summary: Daftar notifikasi
+      parameters:
+        - name: unread_only
+          in: query
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Notification' } }
+                      meta: { $ref: '#/components/schemas/Meta' }
+  /notifications/badge:
+    get:
+      tags: [Inbox]
+      summary: Badge Inbox
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/Badge' } }
+  /notifications/read-all:
+    patch:
+      tags: [Inbox]
+      summary: Tandai semua dibaca
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: object
+                        properties: { updated: { type: integer, example: 3 } }
+  /notifications/{id}/read:
+    patch:
+      tags: [Inbox]
+      summary: Tandai satu notifikasi dibaca
+      parameters: [ { $ref: '#/components/parameters/Id' } ]
+      responses:
+        '200': { $ref: '#/components/responses/OKEmpty' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /pickup-points:
+    get:
+      tags: [Map]
+      summary: Daftar pos (dropdown form)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { type: array, items: { $ref: '#/components/schemas/PickupPoint' } } }
+  /pickup-points/{id}/items:
+    get:
+      tags: [Map]
+      summary: Bottom sheet pos — barang tersedia
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PickupSummary' }
+                      meta: { $ref: '#/components/schemas/Meta' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /map/availability:
+    get:
+      tags: [Map]
+      summary: Marker peta ketersediaan
+      description: Hanya pos dengan ≥1 barang `DEPOSITED` & laporan ACTIVE yang muncul sebagai marker.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/Availability' } }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Q:
+      name: q
+      in: query
+      description: Kata kunci (judul, deskripsi, lokasi, warna)
+      schema: { type: string }
+    ReportType:
+      name: type
+      in: query
+      schema: { $ref: '#/components/schemas/ReportType' }
+    Category:
+      name: category
+      in: query
+      schema: { $ref: '#/components/schemas/Category' }
+    ReportStatus:
+      name: status
+      in: query
+      schema: { type: string, enum: [ACTIVE, COMPLETED, CLOSED, ALL] }
+    ClaimStatus:
+      name: status
+      in: query
+      schema: { $ref: '#/components/schemas/ClaimStatus' }
+
+  responses:
+    OKEmpty:
+      description: OK
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    ReportList:
+      description: OK
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Report' } }
+                  meta: { $ref: '#/components/schemas/Meta' }
+    ClaimOne:
+      description: OK
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - properties: { data: { $ref: '#/components/schemas/Claim' } }
+    ClaimList:
+      description: OK
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Claim' } }
+                  meta: { $ref: '#/components/schemas/Meta' }
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unauthorized:
+      description: UNAUTHENTICATED / INVALID_TOKEN / INVALID_CREDENTIALS
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example: { success: false, error: { code: UNAUTHENTICATED, message: Token akses diperlukan } }
+    Forbidden:
+      description: SELF_CLAIM / NOT_FINDER / NOT_CLAIMANT / NOT_REPORT_OWNER / CONTACT_RESTRICTED
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example: { success: false, error: { code: SELF_CLAIM, message: Tidak dapat mengajukan klaim atas laporan sendiri } }
+    NotFound:
+      description: REPORT_NOT_FOUND / CLAIM_NOT_FOUND / USER_NOT_FOUND / PICKUP_POINT_NOT_FOUND / NOTIFICATION_NOT_FOUND
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Conflict:
+      description: NIM_TAKEN / EMAIL_TAKEN / DUPLICATE_CLAIM / ALREADY_APPROVED / INVALID_CLAIM_STATE / CANNOT_RESUBMIT / REPORT_HAS_CLAIMS / HAS_APPROVED_CLAIM / CLAIM_CONFLICT
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example: { success: false, error: { code: DUPLICATE_CLAIM, message: Kamu sudah memiliki klaim aktif untuk barang ini } }
+    Unprocessable:
+      description: ITEM_UNAVAILABLE / REPORT_NOT_ACTIVE / FOUND_REPORT_ONLY / INVALID_CUSTODY_STATE / PROOF_UNAVAILABLE / OWN_REPORT
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    ValidationError:
+      description: VALIDATION_ERROR (detail per field)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example:
+            success: false
+            error:
+              code: VALIDATION_ERROR
+              message: Input tidak valid
+              details: { title: wajib diisi, type: 'harus salah satu dari: LOST FOUND' }
+    TooManyRequests:
+      description: RATE_LIMITED
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string }
+        data: {}
+        meta: { $ref: '#/components/schemas/Meta' }
+    ErrorEnvelope:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: object
+              additionalProperties: { type: string }
+    Meta:
+      type: object
+      properties:
+        page: { type: integer, example: 1 }
+        limit: { type: integer, example: 20 }
+        total: { type: integer, example: 42 }
+        total_pages: { type: integer, example: 3 }
+
+    ReportType: { type: string, enum: [LOST, FOUND] }
+    ReportStatus: { type: string, enum: [ACTIVE, COMPLETED, CLOSED] }
+    Custody:
+      type: string
+      enum: [HELD_BY_FINDER, AWAITING_DROPOFF, DEPOSITED, UNAVAILABLE]
+      description: Hanya untuk FOUND. HELD_BY_FINDER=masih dipegang, AWAITING_DROPOFF=Menunggu Penitipan, DEPOSITED=Dititipkan, UNAVAILABLE=tidak tersedia
+    Category:
+      type: string
+      enum: [ELECTRONICS, WALLET, ID_CARD, KEYS, BAG, CLOTHING, ACCESSORIES, BOOKS, STATIONERY, BOTTLE, OTHER]
+    ClaimStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, ITEM_UNAVAILABLE, COMPLETED, CANCELLED]
+    PickupMethod: { type: string, enum: [AT_PICKUP_POINT, MEET_FINDER] }
+    ClaimAction:
+      type: string
+      enum: [APPROVE, REJECT, CANCEL, RESUBMIT, COMPLETE_HANDOVER, VIEW_PROOF, CONTACT]
+    MatchLevel: { type: string, enum: [HIGH, MEDIUM, LOW] }
+    MatchAttribute: { type: string, enum: [category, color, location, time, photo, keywords] }
+
+    RegisterRequest:
+      type: object
+      description: Form "Daftar Akun Temuin" (Figma). Email tidak ada di form, jadi opsional.
+      required: [name, nim, faculty, whatsapp, password, password_confirmation, agree_terms]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120, example: Dimas Pratama }
+        nim: { type: string, pattern: '^[0-9]{8,20}$', example: '245150207111065', description: Unik; dipakai untuk login }
+        faculty: { type: string, example: FILKOM, description: 'Kode atau nama dari GET /faculties; disimpan sebagai nama lengkap' }
+        whatsapp: { type: string, minLength: 8, maxLength: 30, example: '081212341234' }
+        password: { type: string, minLength: 8, maxLength: 72, example: password123 }
+        password_confirmation: { type: string, example: password123, description: Harus sama dengan password }
+        agree_terms: { type: boolean, example: true, description: Harus true (Ketentuan Layanan & Kebijakan Privasi) }
+        email: { type: string, format: email, nullable: true }
+        instagram: { type: string, nullable: true, example: '@neval' }
+    LoginRequest:
+      type: object
+      required: [identifier, password]
+      properties:
+        identifier: { type: string, example: '245150207111065', description: NIM atau email }
+        email: { type: string, description: 'Legacy alias untuk identifier' }
+        password: { type: string }
+    Faculty:
+      type: object
+      properties:
+        code: { type: string, example: FILKOM }
+        name: { type: string, example: Fakultas Ilmu Komputer }
+    AuthResult:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_at: { type: string, format: date-time }
+        user: { $ref: '#/components/schemas/UserPrivate' }
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name: { type: string }
+        nim: { type: string }
+        faculty: { type: string }
+        whatsapp: { type: string }
+        instagram: { type: string }
+        avatar_url: { type: string, format: uri }
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password: { type: string }
+        new_password: { type: string, minLength: 8 }
+    UserPublic:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        faculty: { type: string, nullable: true }
+        avatar_url: { type: string, nullable: true }
+    UserPrivate:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, nullable: true }
+        nim: { type: string, nullable: true }
+        faculty: { type: string, nullable: true }
+        whatsapp: { type: string, nullable: true }
+        instagram: { type: string, nullable: true }
+        avatar_url: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Contact:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        name: { type: string }
+        whatsapp: { type: string, nullable: true }
+        instagram: { type: string, nullable: true }
+        whatsapp_link: { type: string, nullable: true, example: 'https://wa.me/628123456789' }
+        instagram_url: { type: string, nullable: true, example: 'https://instagram.com/neval' }
+    UploadResult:
+      type: object
+      properties:
+        url: { type: string, example: 'http://localhost:8080/uploads/reports/7b1c.jpg' }
+        size: { type: integer }
+        purpose: { type: string }
+
+    PickupPoint:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, example: SATPAM-FILKOM }
+        name: { type: string, example: Pos Satpam Fakultas Ilmu Komputer }
+        description: { type: string, nullable: true }
+        building: { type: string, nullable: true, example: Fakultas Ilmu Komputer, description: Nama fakultas }
+        latitude: { type: number, example: -7.95384 }
+        longitude: { type: number, example: 112.6145 }
+        opening_hours: { type: string, nullable: true }
+        is_active: { type: boolean }
+
+    CreateReportRequest:
+      type: object
+      description: Wajib salah satu dari location_point_id atau location_name.
+      required: [type, title, category, description, occurred_at]
+      properties:
+        type: { $ref: '#/components/schemas/ReportType' }
+        title: { type: string, minLength: 3, maxLength: 120, description: Nama barang }
+        category: { $ref: '#/components/schemas/Category' }
+        color: { type: string, nullable: true, maxLength: 40 }
+        description: { type: string, minLength: 5, maxLength: 2000, description: Deskripsi PUBLIK (jangan tulis ciri rahasia) }
+        occurred_at: { type: string, format: date-time }
+        location_point_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 'Dropdown "Lokasi" = id pos satpam fakultas dari GET /pickup-points. Mengisi location_area (fakultas), koordinat, dan location_name bila kosong'
+        location_name: { type: string, nullable: true, description: 'Detail tempat, mis. "Kantin, Meja 12". Wajib jika location_point_id kosong' }
+        location_area: { type: string, nullable: true, description: Gedung/area kampus (dipakai pencocokan; ditimpa oleh location_point_id) }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        photo_url: { type: string, nullable: true }
+        custody:
+          type: string
+          nullable: true
+          enum: [HELD_BY_FINDER, AWAITING_DROPOFF]
+          description: Hanya FOUND. Default HELD_BY_FINDER
+        pickup_point_id: { type: string, format: uuid, nullable: true, description: Wajib jika custody=AWAITING_DROPOFF }
+    UpdateReportRequest:
+      type: object
+      properties:
+        title: { type: string }
+        category: { $ref: '#/components/schemas/Category' }
+        color: { type: string }
+        description: { type: string }
+        occurred_at: { type: string, format: date-time }
+        location_point_id: { type: string, format: uuid }
+        location_name: { type: string }
+        location_area: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
+        photo_url: { type: string }
+    CustodyRequest:
+      type: object
+      required: [custody]
+      properties:
+        custody: { type: string, enum: [HELD_BY_FINDER, AWAITING_DROPOFF, UNAVAILABLE] }
+        pickup_point_id: { type: string, format: uuid, nullable: true }
+    Report:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/ReportType' }
+        title: { type: string }
+        category: { $ref: '#/components/schemas/Category' }
+        color: { type: string, nullable: true }
+        description: { type: string }
+        occurred_at: { type: string, format: date-time }
+        location_name: { type: string }
+        location_area: { type: string, nullable: true }
+        location_point_id: { type: string, format: uuid, nullable: true }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        photo_url: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/ReportStatus' }
+        custody:
+          allOf: [ { $ref: '#/components/schemas/Custody' } ]
+          nullable: true
+        pickup_point:
+          allOf: [ { $ref: '#/components/schemas/PickupPoint' } ]
+          nullable: true
+        deposited_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        owner: { $ref: '#/components/schemas/UserPublic' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        viewer: { $ref: '#/components/schemas/ReportViewer' }
+    ReportViewer:
+      type: object
+      description: Hanya ada di detail / create / update
+      properties:
+        is_owner: { type: boolean }
+        can_claim: { type: boolean }
+        can_contact: { type: boolean }
+        my_claim_id: { type: string, nullable: true }
+        my_claim_status:
+          allOf: [ { $ref: '#/components/schemas/ClaimStatus' } ]
+          nullable: true
+
+    MatchResult:
+      type: object
+      properties:
+        source_report_id: { type: string, format: uuid }
+        source: { type: string, enum: [AI, RULE_BASED] }
+        label: { type: string, example: 'Rekomendasi, perlu diverifikasi' }
+        notices: { type: array, items: { type: string } }
+        candidates_found: { type: integer }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MatchItem' }
+    MatchItem:
+      type: object
+      properties:
+        report: { $ref: '#/components/schemas/Report' }
+        level: { $ref: '#/components/schemas/MatchLevel' }
+        matched_attributes: { type: array, items: { $ref: '#/components/schemas/MatchAttribute' } }
+        different_attributes: { type: array, items: { $ref: '#/components/schemas/MatchAttribute' } }
+        not_comparable_attributes: { type: array, items: { $ref: '#/components/schemas/MatchAttribute' } }
+        reason: { type: string }
+        pre_score: { type: number }
+        incomplete_data: { type: boolean }
+
+    SubmitClaimRequest:
+      type: object
+      required: [secret_description]
+      properties:
+        secret_description: { type: string, minLength: 10, maxLength: 2000, description: Ciri khusus RAHASIA, hanya dibaca penemu }
+        proof_photo_url: { type: string, nullable: true, description: 'URL dari /uploads (purpose=claims)' }
+    RejectClaimRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    ClaimReportSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/ReportType' }
+        title: { type: string }
+        category: { $ref: '#/components/schemas/Category' }
+        photo_url: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/ReportStatus' }
+        custody:
+          allOf: [ { $ref: '#/components/schemas/Custody' } ]
+          nullable: true
+    PickupInfo:
+      type: object
+      nullable: true
+      properties:
+        method: { $ref: '#/components/schemas/PickupMethod' }
+        pickup_point:
+          allOf: [ { $ref: '#/components/schemas/PickupPoint' } ]
+          nullable: true
+        instructions: { type: string }
+    Claim:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        role: { type: string, enum: [FINDER, CLAIMANT], description: Peran viewer pada klaim ini }
+        status: { $ref: '#/components/schemas/ClaimStatus' }
+        report: { $ref: '#/components/schemas/ClaimReportSummary' }
+        claimant: { $ref: '#/components/schemas/UserPublic' }
+        finder: { $ref: '#/components/schemas/UserPublic' }
+        secret_description: { type: string }
+        proof_photo_url: { type: string, nullable: true }
+        rejection_reason: { type: string, nullable: true }
+        pickup: { $ref: '#/components/schemas/PickupInfo' }
+        previous_claim_id: { type: string, format: uuid, nullable: true }
+        allowed_actions: { type: array, items: { $ref: '#/components/schemas/ClaimAction' } }
+        decided_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProofPerson:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        nim: { type: string, nullable: true }
+        faculty: { type: string, nullable: true }
+    ClaimProof:
+      type: object
+      properties:
+        claim_id: { type: string, format: uuid }
+        report_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/ClaimStatus' }
+        item: { $ref: '#/components/schemas/ClaimReportSummary' }
+        claimant: { $ref: '#/components/schemas/ProofPerson' }
+        finder: { $ref: '#/components/schemas/ProofPerson' }
+        pickup: { $ref: '#/components/schemas/PickupInfo' }
+        approved_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        disclaimer: { type: string }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [CLAIM_SUBMITTED, CLAIM_APPROVED, CLAIM_REJECTED, CLAIM_CANCELLED, CLAIM_ITEM_UNAVAILABLE, CLAIM_COMPLETED, PICKUP_CHANGED]
+        title: { type: string }
+        body: { type: string }
+        claim_id: { type: string, format: uuid, nullable: true }
+        report_id: { type: string, format: uuid, nullable: true }
+        is_read: { type: boolean }
+        read_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    Badge:
+      type: object
+      properties:
+        unread_notifications: { type: integer }
+        pending_incoming_claims: { type: integer }
+        total: { type: integer }
+
+    Availability:
+      type: object
+      properties:
+        markers:
+          type: array
+          items:
+            type: object
+            properties:
+              pickup_point: { $ref: '#/components/schemas/PickupPoint' }
+              available_count: { type: integer }
+        total_items: { type: integer }
+        is_empty: { type: boolean }
+        message: { type: string, nullable: true }
+    PickupSummary:
+      type: object
+      properties:
+        pickup_point: { $ref: '#/components/schemas/PickupPoint' }
+        available_count: { type: integer }
+        items: { type: array, items: { $ref: '#/components/schemas/Report' } }
