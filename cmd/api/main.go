@@ -17,6 +17,7 @@ import (
 	authapp "github.com/temuin/backend/internal/application/auth"
 	claimapp "github.com/temuin/backend/internal/application/claim"
 	"github.com/temuin/backend/internal/application/events"
+	helpapp "github.com/temuin/backend/internal/application/help"
 	inboxapp "github.com/temuin/backend/internal/application/inbox"
 	matchapp "github.com/temuin/backend/internal/application/matching"
 	pickupapp "github.com/temuin/backend/internal/application/pickup"
@@ -65,7 +66,7 @@ func main() {
 	}
 	deepSeek := ai.NewDeepSeek(cfg.SinarCloudAPIKey, cfg.DeepSeekModel, cfg.UploadDir)
 	if !deepSeek.Enabled() {
-		log.Println("SINARCLOUD_API_KEY not set: matching uses rule-based fallback")
+		log.Println("SINARCLOUD_API_KEY not set: matching uses rule-based fallback; help chat uses FAQ fallback")
 	}
 
 	// application
@@ -77,6 +78,7 @@ func main() {
 	inboxSvc := inboxapp.NewService(notifRepo, claimRepo)
 	pickupSvc := pickupapp.NewService(pickupRepo, reportRepo, reportSvc)
 	matchSvc := matchapp.NewService(reportRepo, deepSeek, reportSvc)
+	helpSvc := helpapp.NewService(deepSeek, helpapp.NewReportSearcher(reportSvc))
 
 	// interfaces
 	app := fiber.New(fiber.Config{
@@ -100,6 +102,7 @@ func main() {
 		Inbox:    handler.NewInboxHandler(inboxSvc),
 		Pickup:   handler.NewPickupHandler(pickupSvc),
 		Matching: handler.NewMatchingHandler(matchSvc),
+		Help:     handler.NewHelpHandler(helpSvc),
 		Upload:   handler.NewUploadHandler(store),
 	}, tokens)
 

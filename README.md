@@ -34,7 +34,7 @@ make db-up      # Postgres 16 di localhost:5433 (docker compose, project "temuin
 make run        # API di http://localhost:8080
 ```
 Tabel dibuat otomatis (`AUTO_MIGRATE=true`) dan 17 Pos Satpam (satu per fakultas UB) di-seed sebagai pilihan lokasi & pos penitipan (`SEED_DATA=true`).
-Rekomendasi AI memakai DeepSeek melalui SinarCloud. Atur `SINARCLOUD_API_KEY` dan, bila perlu, `DEEPSEEK_MODEL`. Jika key kosong atau provider gagal, backend memakai penilaian berbasis aturan.
+Rekomendasi kecocokan dan Chat Bantuan Temuin sama-sama memakai DeepSeek melalui SinarCloud, dengan `SINARCLOUD_API_KEY` dan model yang dipilih lewat `DEEPSEEK_MODEL` (default `deepseek/deepseek-v4-1-flash`). Rekomendasi mengirim maksimal sepuluh kandidat beratribut publik ke model, lalu memvalidasi ID dan tingkat kecocokan sebelum menampilkan hasil. Untuk pertanyaan tentang barang, backend menyertakan konteks dari maksimal empat laporan publik aktif dan mengembalikan referensi yang dapat dibuka di aplikasi. Data kontak serta ciri rahasia klaim tidak dikirim ke model. Tanpa key atau saat provider gagal, rekomendasi memakai aturan dan chat menjawab dari laporan aktif atau panduan FAQ sesuai pertanyaan.
 
 Health check: `GET /health`.
 
@@ -51,7 +51,7 @@ internal/
     persistence/postgres/          GORM repo, migrasi, partial unique index, seed, TxManager
     security/                      bcrypt + JWT
     storage/                       upload gambar ke disk lokal
-    ai/                            SinarCloud DeepSeek client
+    ai/                            SinarCloud DeepSeek client for matching and help
   interfaces/http/                 Fiber: router, handler, middleware, response envelope
   shared/                          apperror, tx
 docs/                              openapi.yaml, API_CONTRACT.md
