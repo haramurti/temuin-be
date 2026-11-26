@@ -10,25 +10,25 @@ import (
 )
 
 type Config struct {
-	AppEnv       string
-	AppPort      string
-	BaseURL      string
-	CORSOrigins  string
-	DBHost       string
-	DBPort       string
-	DBUser       string
-	DBPassword   string
-	DBName       string
-	DBSSLMode    string
-	DBTimezone   string
-	JWTSecret    string
-	JWTTTL       time.Duration
-	UploadDir    string
-	MaxUploadMB  int
-	GeminiAPIKey string
-	GeminiModel  string
-	AutoMigrate  bool
-	SeedData     bool
+	AppEnv           string
+	AppPort          string
+	BaseURL          string
+	CORSOrigins      string
+	DBHost           string
+	DBPort           string
+	DBUser           string
+	DBPassword       string
+	DBName           string
+	DBSSLMode        string
+	DBTimezone       string
+	JWTSecret        string
+	JWTTTL           time.Duration
+	UploadDir        string
+	MaxUploadMB      int
+	SinarCloudAPIKey string
+	DeepSeekModel    string
+	AutoMigrate      bool
+	SeedData         bool
 }
 
 func Load() *Config {
@@ -37,25 +37,25 @@ func Load() *Config {
 	maxMB, _ := strconv.Atoi(env("MAX_UPLOAD_MB", "5"))
 	port := env("APP_PORT", "8080")
 	return &Config{
-		AppEnv:       env("APP_ENV", "development"),
-		AppPort:      port,
-		BaseURL:      env("BASE_URL", "http://localhost:"+port),
-		CORSOrigins:  env("CORS_ORIGINS", "*"),
-		DBHost:       env("DB_HOST", "localhost"),
-		DBPort:       env("DB_PORT", "5432"),
-		DBUser:       env("DB_USER", "temuin"),
-		DBPassword:   env("DB_PASSWORD", "temuin"),
-		DBName:       env("DB_NAME", "temuin"),
-		DBSSLMode:    env("DB_SSLMODE", "disable"),
-		DBTimezone:   env("DB_TIMEZONE", "Asia/Jakarta"),
-		JWTSecret:    env("JWT_SECRET", "change-me-in-production"),
-		JWTTTL:       time.Duration(ttlHours) * time.Hour,
-		UploadDir:    env("UPLOAD_DIR", "./uploads"),
-		MaxUploadMB:  maxMB,
-		GeminiAPIKey: env("GEMINI_API_KEY", ""),
-		GeminiModel:  env("GEMINI_MODEL", "gemini-2.5-flash"),
-		AutoMigrate:  env("AUTO_MIGRATE", "true") == "true",
-		SeedData:     env("SEED_DATA", "true") == "true",
+		AppEnv:           env("APP_ENV", "development"),
+		AppPort:          port,
+		BaseURL:          env("BASE_URL", "http://localhost:"+port),
+		CORSOrigins:      env("CORS_ORIGINS", "*"),
+		DBHost:           env("DB_HOST", "localhost"),
+		DBPort:           env("DB_PORT", "5432"),
+		DBUser:           env("DB_USER", "temuin"),
+		DBPassword:       env("DB_PASSWORD", "temuin"),
+		DBName:           env("DB_NAME", "temuin"),
+		DBSSLMode:        env("DB_SSLMODE", "disable"),
+		DBTimezone:       env("DB_TIMEZONE", "Asia/Jakarta"),
+		JWTSecret:        env("JWT_SECRET", "change-me-in-production"),
+		JWTTTL:           time.Duration(ttlHours) * time.Hour,
+		UploadDir:        env("UPLOAD_DIR", "./uploads"),
+		MaxUploadMB:      maxMB,
+		SinarCloudAPIKey: env("SINARCLOUD_API_KEY", env("DEEPSEEK_API_KEY", "")),
+		DeepSeekModel:    env("DEEPSEEK_MODEL", "deepseek/deepseek-v4-1-flash"),
+		AutoMigrate:      env("AUTO_MIGRATE", "true") == "true",
+		SeedData:         env("SEED_DATA", "true") == "true",
 	}
 }
 

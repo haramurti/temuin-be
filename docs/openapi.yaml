@@ -30,6 +30,8 @@ tags:
     description: Status penitipan barang temuan (Fungsi 2)
   - name: Matching
     description: Rekomendasi kecocokan (Fungsi 4)
+  - name: Help
+    description: Panduan penggunaan Temuin
   - name: Claims
     description: Verifikasi klaim & serah terima (Fungsi 1)
   - name: Inbox
@@ -434,8 +436,11 @@ paths:
       description: |
         Tiga tahap: (1) filter wajib — laporan lawan jenis, aktif, bukan milik sendiri, kategori sama,
         waktu temuan ≥ waktu hilang dan selisih ≤ 30 hari; (2) pra-penilaian berbasis aturan (warna, lokasi,
-        waktu, kata kunci), ambil 10 teratas; (3) Gemini memberi label HIGH/MEDIUM/LOW.
-        Jika Gemini tidak dikonfigurasi/gagal → `source=RULE_BASED` + `notices`.
+        waktu, kata kunci), ambil 10 teratas; (3) DeepSeek via SinarCloud membandingkan teks serta foto
+        laporan lokal yang berhasil dibaca (JPEG/PNG/WebP hingga 2 MiB) dan memberi label HIGH/MEDIUM/LOW.
+        Setiap kandidat hasil AI menyertakan explanation.similarities dan explanation.differences.
+        Foto yang tidak dapat dibaca tidak dinilai dan ditandai tidak dapat dibandingkan.
+        Jika DeepSeek tidak dikonfigurasi/gagal → `source=RULE_BASED` + `notices`.
         Data < 3 atribut inti yang bisa dibandingkan → level maksimal MEDIUM.
         **Hasil hanya rekomendasi**, tidak mengubah status laporan/klaim. Rate limit 10 req/menit/user.
       parameters: [ { $ref: '#/components/parameters/Id' } ]
@@ -450,6 +455,46 @@ paths:
                   - properties: { data: { $ref: '#/components/schemas/MatchResult' } }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /help/topics:
+    get:
+      tags: [Help]
+      summary: Daftar topik Bantuan Temuin
+      responses:
+        '200':
+          description: FAQ dan topik bantuan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/HelpTopic' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /help/chat:
+    post:
+      tags: [Help]
+      summary: Tanya Bantuan Temuin
+      description: Pertanyaan hingga 500 karakter dan maksimal empat pesan riwayat. Untuk pertanyaan tentang barang, backend mencari laporan publik yang masih aktif dan menyertakan hingga empat laporan yang relevan. DeepSeek menjawab dengan konteks tersebut bila tersedia; jika tidak, API memakai panduan cadangan. Data kontak dan rahasia klaim tidak disertakan. Maksimal 20 permintaan per menit per pengguna.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HelpChatRequest' }
+      responses:
+        '200':
+          description: Jawaban bantuan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/HelpChatReply' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /reports/{id}/claims:
@@ -1084,8 +1129,68 @@ components:
         different_attributes: { type: array, items: { $ref: '#/components/schemas/MatchAttribute' } }
         not_comparable_attributes: { type: array, items: { $ref: '#/components/schemas/MatchAttribute' } }
         reason: { type: string }
+        explanation: { $ref: '#/components/schemas/MatchExplanation' }
         pre_score: { type: number }
         incomplete_data: { type: boolean }
+    MatchExplanation:
+      type: object
+      required: [similarities, differences]
+      properties:
+        similarities:
+          type: array
+          maxItems: 2
+          items: { type: string, maxLength: 180 }
+        differences:
+          type: array
+          maxItems: 2
+          items: { type: string, maxLength: 180 }
+    HelpTopic:
+      type: object
+      required: [id, title, description, answer]
+      properties:
+        id: { type: string, enum: [REPORTING, SEARCH, MAP_CUSTODY, CLAIM_INBOX] }
+        title: { type: string }
+        description: { type: string }
+        answer: { type: string }
+    HelpChatTurn:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string, maxLength: 500 }
+    HelpChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 500 }
+        history:
+          type: array
+          maxItems: 4
+          items: { $ref: '#/components/schemas/HelpChatTurn' }
+    HelpChatReply:
+      type: object
+      required: [reply, topic, source, reports]
+      properties:
+        reply: { type: string }
+        topic: { type: string, enum: [REPORTING, SEARCH, MAP_CUSTODY, CLAIM_INBOX, GENERAL] }
+        source: { type: string, enum: [DEEPSEEK, FAQ, DATABASE] }
+        reports:
+          type: array
+          description: Laporan publik aktif yang menjadi konteks jawaban dan dapat dibuka dari aplikasi.
+          items: { $ref: '#/components/schemas/HelpReportReference' }
+    HelpReportReference:
+      type: object
+      required: [id, type, title, category, location_name, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [LOST, FOUND] }
+        title: { type: string }
+        category: { type: string }
+        color: { type: string }
+        location_name: { type: string }
+        location_area: { type: string }
+        photo_url: { type: string, format: uri }
+        occurred_at: { type: string, format: date-time }
 
     SubmitClaimRequest:
       type: object

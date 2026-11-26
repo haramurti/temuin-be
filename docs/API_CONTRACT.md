@@ -12,7 +12,7 @@ Spesifikasi lengkap (import ke Apidog): [`openapi.yaml`](openapi.yaml) — juga 
 | Format | JSON, `snake_case`. Waktu RFC3339 UTC (`2026-11-16T07:30:00Z`). ID = UUID v4. |
 | Pagination | `?page=1&limit=20` (maks 100) → `meta: {page, limit, total, total_pages}` |
 | Partial update | `PATCH` hanya mengubah field yang dikirim. String kosong `""` mengosongkan field opsional profil. |
-| Rate limit | `/auth/*` 20 req/menit/IP · `/reports/{id}/matches` 10 req/menit/user → `429 RATE_LIMITED` |
+| Rate limit | `/auth/*` 20 req/menit/IP · `/reports/{id}/matches` 10 req/menit/user · `/help/chat` 20 req/menit/user → `429 RATE_LIMITED` |
 
 ### Envelope sukses
 ```json
@@ -57,7 +57,9 @@ Spesifikasi lengkap (import ke Apidog): [`openapi.yaml`](openapi.yaml) — juga 
 | | `GET /reports/{id}/contact` | user | Hubungi Pelapor / kontak penemu (terbatas) |
 | Custody | `PATCH /reports/{id}/custody` | pemilik FOUND | Pegang sendiri / pilih-ganti pos / tidak tersedia |
 | | `POST /reports/{id}/custody/confirm-deposit` | pemilik FOUND | Konfirmasi sudah dititipkan → masuk peta |
-| Matching | `POST /reports/{id}/matches` | user | Rekomendasi kecocokan |
+| Matching | `POST /reports/{id}/matches` | user | Rekomendasi kecocokan; hasil AI menyertakan penjelasan kesamaan dan perbedaan |
+| Help | `GET /help/topics` | user | FAQ topik bantuan Temuin |
+| | `POST /help/chat` | user | Pertanyaan bantuan (maks. 500 karakter, hingga 4 pesan riwayat); DeepSeek dengan konteks laporan publik aktif atau panduan cadangan |
 | Claims | `POST /reports/{id}/claims` | calon pemilik | Ajukan klaim |
 | | `GET /reports/{id}/claims` | pemilik | Semua klaim di laporan saya |
 | | `GET /claims/incoming` | penemu | Inbox: klaim masuk |
@@ -74,6 +76,8 @@ Spesifikasi lengkap (import ke Apidog): [`openapi.yaml`](openapi.yaml) — juga 
 | Map | `GET /pickup-points` | user | Dropdown pos |
 | | `GET /map/availability` | user | Marker (hanya pos dengan stok > 0) |
 | | `GET /pickup-points/{id}/items` | user | Bottom sheet: barang tersedia di pos |
+
+`items[].explanation` berisi paling banyak dua butir `similarities` dan dua butir `differences`. DeepSeek via SinarCloud membandingkan teks publik serta foto JPEG/PNG/WebP dari penyimpanan lokal (maksimal 2 MiB per foto dan 5 MiB total per permintaan). Pada hasil AI, foto di luar batas atau yang tidak dapat dibaca masuk `not_comparable_attributes`.
 
 ## 3. State Machine
 
@@ -137,10 +141,15 @@ Client cukup render tombol sesuai array ini.
 **Fungsi 4 – Rekomendasi**
 - Filter wajib: jenis berlawanan, ACTIVE, bukan milik sendiri, kategori sama, `found.occurred_at ≥ lost.occurred_at`, selisih ≤ 30 hari.
 - Pra-skor: kategori +2, warna sama +3, area sama +2 (atau nama lokasi mirip +1), selisih waktu ≤24j +2 / ≤72j +1, kemiripan kata kunci ×3.
-- 10 kandidat teratas dikirim ke Gemini (hanya atribut publik; tanpa kontak & ciri rahasia). ID hasil divalidasi terhadap kandidat yang dikirim; label hanya HIGH/MEDIUM/LOW.
+- 10 kandidat teratas dikirim ke DeepSeek via SinarCloud (hanya atribut publik; tanpa kontak & ciri rahasia). ID hasil divalidasi terhadap kandidat yang dikirim; label hanya HIGH/MEDIUM/LOW.
 - Urutan: level → jumlah atribut cocok → pra-skor → selisih waktu terkecil → laporan terbaru.
 - < 3 atribut inti bisa dibandingkan → maksimal `MEDIUM` + notice data belum lengkap.
-- Tanpa `GEMINI_API_KEY` atau AI gagal → `source: "RULE_BASED"`.
+- Tanpa `SINARCLOUD_API_KEY` atau AI gagal → `source: "RULE_BASED"`.
+
+**Bantuan Temuin – konteks laporan**
+- Pertanyaan tentang barang memakai pencarian backend atas laporan `ACTIVE` yang memang tampil pada feed publik. Pencarian membatasi hasil ke empat laporan dan hanya mengirim judul, jenis, kategori, warna, lokasi, serta waktu ke DeepSeek.
+- Data kontak, pemilik, ciri rahasia klaim, dan kredensial tidak dimasukkan ke konteks AI. Respons dapat menyertakan `reports` berisi ID serta metadata publik agar aplikasi membuka detail laporan yang dirujuk.
+- Jika pencarian tidak menemukan laporan aktif, chatbot menyatakan bahwa tidak ada hasil yang cocok saat ini. Jika database tidak dapat diperiksa, chatbot tidak menebak.
 
 **Akun & Lokasi**
 - Registrasi wajib NIM (unik), fakultas (kode/nama dari `/faculties`), WhatsApp, `password_confirmation` sama, `agree_terms=true`. Email opsional.

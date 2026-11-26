@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/temuin/backend/internal/application/dto"
@@ -22,14 +23,15 @@ const (
 )
 
 type Item struct {
-	Report              dto.Report   `json:"report"`
-	Level               domain.Level `json:"level"`
-	MatchedAttributes   []string     `json:"matched_attributes"`
-	DifferentAttributes []string     `json:"different_attributes"`
-	NotComparable       []string     `json:"not_comparable_attributes"`
-	Reason              string       `json:"reason"`
-	PreScore            float64      `json:"pre_score"`
-	IncompleteData      bool         `json:"incomplete_data"`
+	Report              dto.Report          `json:"report"`
+	Level               domain.Level        `json:"level"`
+	MatchedAttributes   []string            `json:"matched_attributes"`
+	DifferentAttributes []string            `json:"different_attributes"`
+	NotComparable       []string            `json:"not_comparable_attributes"`
+	Reason              string              `json:"reason"`
+	Explanation         *domain.Explanation `json:"explanation,omitempty"`
+	PreScore            float64             `json:"pre_score"`
+	IncompleteData      bool                `json:"incomplete_data"`
 }
 
 type Result struct {
@@ -137,7 +139,8 @@ func (s *Service) Recommend(ctx context.Context, uid, reportID uuid.UUID) (*Resu
 		res.Items = append(res.Items, Item{
 			Report: hyd[i], Level: scored[i].Level, MatchedAttributes: nz(scored[i].Matched),
 			DifferentAttributes: nz(scored[i].Different), NotComparable: nz(scored[i].NotComparable),
-			Reason: scored[i].Reason, PreScore: round2(scored[i].PreScore), IncompleteData: scored[i].IncompleteData,
+			Reason: scored[i].Reason, Explanation: scored[i].Explanation,
+			PreScore: round2(scored[i].PreScore), IncompleteData: scored[i].IncompleteData,
 		})
 	}
 	return res, nil
@@ -157,7 +160,8 @@ func (s *Service) apply(scored []domain.Result, vs []domain.AIVerdict) bool {
 	seen := map[string]bool{}
 	for _, v := range vs {
 		i, ok := idx[v.ReportID]
-		if !ok || seen[v.ReportID] || !v.Level.Valid() {
+		explanation := normalizeExplanation(v.Explanation)
+		if !ok || seen[v.ReportID] || !v.Level.Valid() || explanation == nil || len(explanation.Similarities) == 0 {
 			continue
 		}
 		seen[v.ReportID] = true
@@ -165,10 +169,15 @@ func (s *Service) apply(scored []domain.Result, vs []domain.AIVerdict) bool {
 		for _, a := range scored[i].NotComparable {
 			nc[a] = true
 		}
+		if !v.PhotoCompared {
+			nc[domain.AttrPhoto] = true
+			scored[i].NotComparable = appendUnique(scored[i].NotComparable, domain.AttrPhoto)
+		}
 		scored[i].Level = v.Level
 		scored[i].Matched = filter(v.Matched, nc)
 		scored[i].Different = filter(v.Different, nc)
 		scored[i].Reason = v.Reason
+		scored[i].Explanation = explanation
 		applied++
 	}
 	if applied == 0 {
@@ -182,6 +191,54 @@ func (s *Service) apply(scored []domain.Result, vs []domain.AIVerdict) bool {
 		}
 	}
 	return true
+}
+
+func normalizeExplanation(input *domain.Explanation) *domain.Explanation {
+	if input == nil {
+		return nil
+	}
+	clean := func(values []string) []string {
+		out := make([]string, 0, 2)
+		seen := map[string]bool{}
+		for _, value := range values {
+			value = strings.Join(strings.Fields(value), " ")
+			if value == "" {
+				continue
+			}
+			runes := []rune(value)
+			if len(runes) > 180 {
+				value = string(runes[:177]) + "…"
+			}
+			key := strings.ToLower(value)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, value)
+			if len(out) == 2 {
+				break
+			}
+		}
+		return out
+	}
+
+	explanation := &domain.Explanation{
+		Similarities: clean(input.Similarities),
+		Differences:  clean(input.Differences),
+	}
+	if len(explanation.Similarities) == 0 && len(explanation.Differences) == 0 {
+		return nil
+	}
+	return explanation
+}
+
+func appendUnique(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 func filter(in []string, nc map[string]bool) []string {

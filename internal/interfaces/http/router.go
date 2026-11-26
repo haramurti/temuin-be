@@ -19,6 +19,7 @@ type Handlers struct {
 	Inbox    *handler.InboxHandler
 	Pickup   *handler.PickupHandler
 	Matching *handler.MatchingHandler
+	Help     *handler.HelpHandler
 	Upload   *handler.UploadHandler
 }
 
@@ -40,6 +41,13 @@ func Register(app *fiber.App, h Handlers, tokens user.TokenIssuer) {
 	v1.Get("/faculties", handler.Faculties)
 
 	p := v1.Group("", middleware.Auth(tokens))
+	helpLimit := limiter.New(limiter.Config{Max: 20, Expiration: time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string { return middleware.UserID(c).String() },
+		LimitReached: func(c *fiber.Ctx) error {
+			return apperror.New(apperror.KindTooManyRequests, "RATE_LIMITED", "Terlalu banyak pesan bantuan, coba lagi sebentar lagi")
+		}})
+	p.Get("/help/topics", h.Help.Topics)
+	p.Post("/help/chat", helpLimit, h.Help.Chat)
 
 	// Users / profile
 	p.Get("/users/me", h.User.Me)
