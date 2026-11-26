@@ -34,7 +34,7 @@ make db-up      # Postgres 16 di localhost:5433 (docker compose, project "temuin
 make run        # API di http://localhost:8080
 ```
 Tabel dibuat otomatis (`AUTO_MIGRATE=true`) dan 17 Pos Satpam (satu per fakultas UB) di-seed sebagai pilihan lokasi & pos penitipan (`SEED_DATA=true`).
-Rekomendasi AI aktif kalau `GEMINI_API_KEY` diisi; kalau kosong pakai penilaian berbasis aturan.
+Rekomendasi AI memakai DeepSeek melalui SinarCloud. Atur `SINARCLOUD_API_KEY` dan, bila perlu, `DEEPSEEK_MODEL`. Jika key kosong atau provider gagal, backend memakai penilaian berbasis aturan.
 
 Health check: `GET /health`.
 
@@ -51,7 +51,7 @@ internal/
     persistence/postgres/          GORM repo, migrasi, partial unique index, seed, TxManager
     security/                      bcrypt + JWT
     storage/                       upload gambar ke disk lokal
-    ai/                            Gemini REST client
+    ai/                            SinarCloud DeepSeek client
   interfaces/http/                 Fiber: router, handler, middleware, response envelope
   shared/                          apperror, tx
 docs/                              openapi.yaml, API_CONTRACT.md

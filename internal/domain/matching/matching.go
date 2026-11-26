@@ -83,14 +83,21 @@ func ToPublicView(r *report.Report) PublicView {
 
 // AIVerdict is what an AIComparer returns per candidate.
 type AIVerdict struct {
-	ReportID  string   `json:"report_id"`
-	Level     Level    `json:"level"`
-	Matched   []string `json:"matched_attributes"`
-	Different []string `json:"different_attributes"`
-	Reason    string   `json:"reason"`
+	ReportID      string       `json:"report_id"`
+	Level         Level        `json:"level"`
+	Matched       []string     `json:"matched_attributes"`
+	Different     []string     `json:"different_attributes"`
+	Reason        string       `json:"reason"`
+	Explanation   *Explanation `json:"explanation"`
+	PhotoCompared bool         `json:"-"`
 }
 
-// AIComparer is a port implemented by infrastructure (Gemini).
+type Explanation struct {
+	Similarities []string `json:"similarities"`
+	Differences  []string `json:"differences"`
+}
+
+// AIComparer is a port implemented by the SinarCloud DeepSeek client.
 type AIComparer interface {
 	Enabled() bool
 	Compare(ctx context.Context, source PublicView, candidates []PublicView) ([]AIVerdict, error)
@@ -104,6 +111,7 @@ type Result struct {
 	Different      []string
 	NotComparable  []string
 	Reason         string
+	Explanation    *Explanation
 	PreScore       float64
 	TimeDiff       time.Duration
 	IncompleteData bool

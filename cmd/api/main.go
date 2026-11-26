@@ -63,9 +63,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	gemini := ai.NewGemini(cfg.GeminiAPIKey, cfg.GeminiModel)
-	if !gemini.Enabled() {
-		log.Println("GEMINI_API_KEY not set: matching uses rule-based fallback")
+	deepSeek := ai.NewDeepSeek(cfg.SinarCloudAPIKey, cfg.DeepSeekModel, cfg.UploadDir)
+	if !deepSeek.Enabled() {
+		log.Println("SINARCLOUD_API_KEY not set: matching uses rule-based fallback")
 	}
 
 	// application
@@ -76,7 +76,7 @@ func main() {
 	claimSvc := claimapp.NewService(txm, claimRepo, reportRepo, userRepo, pickupRepo, notifRepo, notifier)
 	inboxSvc := inboxapp.NewService(notifRepo, claimRepo)
 	pickupSvc := pickupapp.NewService(pickupRepo, reportRepo, reportSvc)
-	matchSvc := matchapp.NewService(reportRepo, gemini, reportSvc)
+	matchSvc := matchapp.NewService(reportRepo, deepSeek, reportSvc)
 
 	// interfaces
 	app := fiber.New(fiber.Config{
